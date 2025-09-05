@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sinan - The Puzzle Game</title>
+    <style>
+        /* Basic page styling */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f0f2f5;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        /* Main game container */
+        #game-container {
+            text-align: center;
+            background: #ffffff;
+            padding: 20px 30px;
+            border-radius: 16px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #1a237e;
+            margin-top: 0;
+        }
+
+        /* Game info panel (score and restart button) */
+        #info-panel {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 15px 0;
+            padding: 0 10px;
+        }
+
+        #score-container {
+            font-size: 1.2em;
+            font-weight: 500;
+        }
+        
+        #score {
+            font-weight: bold;
+            color: #d32f2f;
+        }
+
+        #restart-btn {
+            padding: 10px 20px;
+            font-size: 1em;
+            font-weight: bold;
+            color: white;
+            background-color: #1976d2;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+        }
+
+        #restart-btn:hover {
+            background-color: #1565c0;
+            transform: translateY(-2px);
+        }
+
+        /* The 10x10 game grid */
+        #grid-container {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            grid-template-rows: repeat(10, 1fr);
+            border: 2px solid #bdbdbd;
+            width: 90vw;
+            height: 90vw;
+            max-width: 500px;
+            max-height: 500px;
+            background-color: #e0e0e0;
+            gap: 2px;
+        }
+
+        /* Individual cells in the grid */
+        .cell {
+            background-color: #fafafa;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: clamp(12px, 2.5vw, 18px);
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            user-select: none;
+        }
+
+        /* Cell with a number placed in it */
+        .cell.filled {
+            color: #212121;
+            background-color: #eeeeee;
+            cursor: not-allowed;
+        }
+
+        /* The most recently played cell */
+        .cell.current {
+            background-color: #ffca28; /* Amber color */
+            color: #212121;
+        }
+
+        /* A cell that is a valid next move */
+        .cell.valid-move {
+            background-color: #a5d6a7; /* Light green */
+        }
+        .cell.valid-move:hover {
+            background-color: #81c784; /* Darker green */
+        }
+
+        /* Status message for warnings and game results */
+        #status-message {
+            margin-top: 15px;
+            font-size: 1.1em;
+            font-weight: 500;
+            height: 25px;
+            color: #d32f2f;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <h1>Sinan Puzzle</h1>
+        <div id="info-panel">
+            <div id="score-container">Score: <span id="score">0</span></div>
+            <button id="restart-btn">Restart Game</button>
+        </div>
+        <div id="grid-container"></div>
+        <div id="status-message">Click any cell to start!</div>
+    </div>
+
+    <script>
+        // DOM Element References
+        const gridContainer = document.getElementById('grid-container');
+        const scoreDisplay = document.getElementById('score');
+        const restartBtn = document.getElementById('restart-btn');
+        const statusMessage = document.getElementById('status-message');
+
+        // Game Constants
+        const GRID_SIZE = 10;
+
+        // Game State Variables
+        let board = [];
+        let currentNumber = 1;
+        let lastPosition = null;
+        let isGameOver = false;
+
+        /**
+         * Initializes or restarts the game.
+         * Resets all state variables and rebuilds the grid.
+         */
+        function initGame() {
+            // Reset state
+            board = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(0));
+            currentNumber = 1;
+            lastPosition = null;
+            isGameOver = false;
+
+            // Clear UI
+            gridContainer.innerHTML = '';
+            scoreDisplay.textContent = '0';
+            statusMessage.textContent = 'Click any cell to start!';
+
+            // Create grid cells
+            for (let row = 0; row < GRID_SIZE; row++) {
+                for (let col = 0; col < GRID_SIZE; col++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('cell');
+                    cell.dataset.row = row;
+                    cell.dataset.col = col;
+                    gridContainer.appendChild(cell);
+                }
+            }
+        }
+
+        /**
+         * Handles all click events on the grid container.
+         * @param {Event} e - The click event object.
+         */
+        function handleGridClick(e) {
+            if (isGameOver || !e.target.classList.contains('cell')) {
+                return; // Do nothing if game is over or click is not on a cell
+            }
+
+            const row = parseInt(e.target.dataset.row);
+            const col = parseInt(e.target.dataset.col);
+
+            // First move of the game
+            if (currentNumber === 1) {
+                placeNumber(row, col);
+            } 
+            // Subsequent moves
+            else {
+                if (isValidMove(row, col)) {
+                    placeNumber(row, col);
+                } else {
+                    // Reject invalid move
+                    showTemporaryMessage('Invalid move!', 1500);
+                }
+            }
+        }
+
+        /**
+         * Places a number on the board and updates the game state.
+         * @param {number} row - The row to place the number in.
+         * @param {number} col - The column to place the number in.
+         */
+        function placeNumber(row, col) {
+            // Update board state
+            board[row][col] = currentNumber;
+            lastPosition = { row, col };
+
+            // Update UI
+            const cell = getCell(row, col);
+            cell.textContent = currentNumber;
+            cell.classList.add('filled');
+            
+            updateScore();
+            clearHighlights();
+            cell.classList.add('current');
+
+            // Prepare for next turn
+            currentNumber++;
+            const validMoves = getValidMoves(row, col);
+            highlightValidMoves(validMoves);
+
+            // Check for game over conditions
+            checkGameOver(validMoves);
+        }
+
+        /**
+         * Checks if a move to a given cell is valid based on the last position.
+         * @param {number} row - The target row.
+         * @param {number} col - The target column.
+         * @returns {boolean} - True if the move is valid, false otherwise.
+         */
+        function isValidMove(row, col) {
+            if (board[row][col] !== 0) {
+                return false; // Cell is not empty
+            }
+
+            const { row: lastRow, col: lastCol } = lastPosition;
+            const rowDiff = Math.abs(row - lastRow);
+            const colDiff = Math.abs(col - lastCol);
+
+            // Rule: Straight jump of 3 cells (skipping 2).
+            const isStraightJump = (rowDiff === 3 && colDiff === 0) || (rowDiff === 0 && colDiff === 3);
+            
+            // Rule: Diagonal jump of 2 cells (skipping 1).
+            const isDiagonalJump = (rowDiff === 2 && colDiff === 2);
+
+            return isStraightJump || isDiagonalJump;
+        }
+
+        /**
+         * Finds all valid moves from a given position.
+         * @param {number} row - The starting row.
+         * @param {number} col - The starting column.
+         * @returns {Array<Object>} - An array of {row, col} objects for valid moves.
+         */
+        function getValidMoves(row, col) {
+            const moves = [];
+            // All potential move destinations based on new rules
+            const potentialMoves = [
+                // Straight jumps (3 cells)
+                { r: row - 3, c: col }, { r: row + 3, c: col },
+                { r: row, c: col - 3 }, { r: row, c: col + 3 },
+                // Diagonal jumps (2 cells)
+                { r: row - 2, c: col - 2 }, { r: row - 2, c: col + 2 },
+                { r: row + 2, c: col - 2 }, { r: row + 2, c: col + 2 }
+            ];
+
+            for (const move of potentialMoves) {
+                // Check if the move is within the grid boundaries
+                if (move.r >= 0 && move.r < GRID_SIZE && move.c >= 0 && move.c < GRID_SIZE) {
+                    // Check if the target cell is empty
+                    if (board[move.r][move.c] === 0) {
+                        moves.push({ row: move.r, col: move.c });
+                    }
+                }
+            }
+            return moves;
+        }
+
+        /**
+         * Checks if the game has ended (win or loss).
+         * @param {Array<Object>} validMoves - The list of available moves.
+         */
+        function checkGameOver(validMoves) {
+            // Win condition: Player successfully places 100
+            if (currentNumber > 100) {
+                statusMessage.textContent = 'Congratulations! You reached 100!';
+                statusMessage.style.color = '#2e7d32'; // Green for win
+                isGameOver = true;
+                clearHighlights(); // No more moves to highlight
+            } 
+            // Lose condition: Player has no more valid moves left
+            else if (validMoves.length === 0 && currentNumber > 1) {
+                statusMessage.textContent = `Game Over! No more moves. You reached ${currentNumber - 1}.`;
+                statusMessage.style.color = '#d32f2f'; // Red for loss
+                isGameOver = true;
+            }
+        }
+
+        // --- UI Helper Functions ---
+
+        function updateScore() {
+            scoreDisplay.textContent = currentNumber;
+        }
+
+        function highlightValidMoves(moves) {
+            for (const move of moves) {
+                getCell(move.row, move.col).classList.add('valid-move');
+            }
+        }
+
+        function clearHighlights() {
+            document.querySelectorAll('.cell').forEach(cell => {
+                cell.classList.remove('valid-move', 'current');
+            });
+        }
+
+        function getCell(row, col) {
+            return gridContainer.children[row * GRID_SIZE + col];
+        }
+
+        function showTemporaryMessage(message, duration) {
+            const originalMessage = statusMessage.textContent;
+            statusMessage.textContent = message;
+            statusMessage.style.color = '#c62828'; // Darker red for warning
+            setTimeout(() => {
+                // Only reset if the message hasn't changed to a game over message
+                if (statusMessage.textContent === message) {
+                    statusMessage.textContent = originalMessage;
+                    statusMessage.style.color = '#d32f2f'; // Reset to default error color
+                }
+            }, duration);
+        }
+
+        // --- Event Listeners ---
+        gridContainer.addEventListener('click', handleGridClick);
+        restartBtn.addEventListener('click', initGame);
+
+        // --- Initial Game Start ---
+        initGame();
+    </script>
+</body>
+</html>
